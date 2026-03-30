@@ -15,8 +15,8 @@ class StudentController extends Controller
             'password' => $request->password,
         ]);
 
-        if ($response->body() == "كلمة المرور او اسم المستخدم خطا") {
-            return "كلمة المرور او اسم المستخدم خطا";
+        if ($response->body() == "Wrong username or password") {
+            return "Wrong username or password";
         }
 
         if ($response->successful()) {
@@ -40,7 +40,7 @@ class StudentController extends Controller
             return response()->json($data);
         }
 
-        return "كلمة المرور او اسم المستخدم خطا";
+        return "Wrong username or password";
     }
 
     public function getSchedule(Request $request)
@@ -51,28 +51,53 @@ class StudentController extends Controller
         ]);
 
         if ($response->successful()) {
-            $scheduleData = $response->json();
+            $fullResponse = $response->json();
 
-            if (is_array($scheduleData)) {
-                foreach ($scheduleData as $course) {
+            $courses = [];
+
+            if (isset($fullResponse['data']['data']) && is_array($fullResponse['data']['data'])) {
+                $courses = $fullResponse['data']['data'];
+            } elseif (isset($fullResponse['data']) && is_array($fullResponse['data'])) {
+                $courses = $fullResponse['data'];
+            } elseif (is_array($fullResponse)) {
+                $courses = $fullResponse;
+            }
+
+            $insertedCount = 0;
+
+            if (!empty($courses) && is_array($courses)) {
+                foreach ($courses as $course) {
+                    if (!is_array($course)) continue;
+
+                    $days = [];
+                    if (!empty($course['S'])) $days[] = "Saturday: " . $course['S'];
+                    if (!empty($course['N'])) $days[] = "Sunday: " . $course['N'];
+                    if (!empty($course['M'])) $days[] = "Monday: " . $course['M'];
+                    if (!empty($course['T'])) $days[] = "Tuesday: " . $course['T'];
+                    if (!empty($course['W'])) $days[] = "Wednesday: " . $course['W'];
+                    if (!empty($course['R'])) $days[] = "Thursday: " . $course['R'];
+
                     DB::table('schedules')->insert([
                         'user_id'     => $request->user_id,
-                        'course_name' => $course['course_ar_name'] ?? $course['course_name'] ?? 'مادة غير معروفة',
-                        'day'         => $course['day_name'] ?? '',
-                        'time'        => $course['lecture_time'] ?? '',
-                        'room'        => $course['hall_name'] ?? '',
+                        'course_name' => $course['subject_name'] ?? ($course['course_name'] ?? 'Unknown Course'),
+                        'day'         => implode(' | ', $days),
+                        'time'        => 'See day field for details',
+                        'room'        => ($course['room_no'] ?? $course['hall_name']) ?: 'Room Not Specified',
                         'created_at'  => now(),
                         'updated_at'  => now(),
                     ]);
+                    $insertedCount++;
                 }
             }
 
             return response()->json([
-                'status' => 'success',
-                'data' => $scheduleData
+                'status'  => 'success',
+                'message' => $insertedCount > 0 ? 'Saved Successfully' : 'No courses array found in response',
+                'debug_data_received' => $courses,
+                'count'   => $insertedCount
             ]);
         }
 
-        return response()->json(['error' => 'فشل في جلب الجدول'], 400);
+        return response()->json(['error' => 'Failed to connect to server'], 400);
     }
 }
